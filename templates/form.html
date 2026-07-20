@@ -1,0 +1,2 @@
+{% extends 'base.html' %}{% block content %}<section class="heading"><h1>{{ title }}</h1></section><form method="post" class="panel form-grid">{% csrf_token %}{{ form.as_div }}<div class="actions"><a class="button" href="javascript:history.back()">취소</a><button class="primary">저장</button></div></form>{% endblock %}
+

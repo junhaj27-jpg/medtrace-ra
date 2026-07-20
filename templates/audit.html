@@ -1,0 +1,2 @@
+{% extends 'base.html' %}{% block content %}<h1>감사 로그</h1><div class="panel"><table><tr><th>사용자</th><th>행위</th><th>경로</th><th>시각</th></tr>{% for x in items %}<tr><td>{{ x.user }}</td><td>{{ x.method }}</td><td>{{ x.path }}</td><td>{{ x.created_at }}</td></tr>{% endfor %}</table></div>{% endblock %}
+

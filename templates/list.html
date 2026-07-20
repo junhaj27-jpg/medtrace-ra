@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="heading">
+  <div><h1>{{ title }}</h1><p>{{ project|default:'등록된 항목을 관리합니다.' }}</p></div>
+  <a class="button primary" href="{% if kind == 'projects' %}{% url 'project_new' %}{% else %}{% url 'object_new' kind %}{% if project %}?project={{ project.pk }}{% endif %}{% endif %}">새 항목</a>
+</section>
+<form class="filter"><input name="q" placeholder="ID 검색"><button>검색</button></form>
+<div class="panel table-wrap"><table>
+  <thead><tr><th>ID</th><th>제목 / 이름</th><th>상태</th><th>최근 수정</th><th></th></tr></thead>
+  <tbody>{% for x in items %}<tr>
+    <td>{{ x.code|default:"-" }}</td>
+    <td>{{ x.title|default:"-" }}</td>
+    <td><span class="badge">{{ x.status|default:"-" }}</span></td>
+    <td>{{ x.updated_at|date:"Y-m-d"|default:"-" }}</td>
+    <td><a href="{{ x.edit_url }}">수정</a>
+      {% if x.has_result %} · <a href="{% url 'result_form' x.pk %}">결과</a>{% endif %}
+      {% if x.delete_url %}<form class="inline" method="post" action="{{ x.delete_url }}" onsubmit="return confirm('삭제하시겠습니까?')">{% csrf_token %}<button class="link" type="submit">삭제</button></form>{% endif %}
+    </td>
+  </tr>{% empty %}<tr><td colspan="5">등록된 항목이 없습니다.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}
