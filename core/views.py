@@ -2,6 +2,8 @@ from io import BytesIO
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
+from django.db import transaction
+from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404,redirect,render
 from django.urls import reverse
@@ -12,7 +14,7 @@ from .forms import *
 from .services import project_summary,trace_rows
 from .permissions import admin_required,has_full_access
 
-MODEL_MAP={'requirements':(Requirement,RequirementForm,'요구사항'),'designs':(DesignItem,DesignItemForm,'설계'),'risks':(Risk,RiskForm,'위험'),'tests':(TestCase,TestCaseForm,'시험'),'incidents':(Incident,IncidentForm,'이상사례'),'capas':(CAPA,CAPAForm,'CAPA')}
+MODEL_MAP={'requirements':(Requirement,RequirementForm,'요구사항'),'designs':(DesignItem,DesignItemForm,'설계'),'risks':(Risk,RiskForm,'위험'),'tests':(TestCase,TestCaseForm,'시험'),'incidents':(Incident,IncidentForm,'이상사례'),'capas':(CAPA,CAPAForm,'CAPA'),'changes':(ChangeRequest,ChangeRequestForm,'변경 요청')}
 def can_edit(user): return has_full_access(user) or user.groups.filter(name__in=['RA_MANAGER','DEVELOPER','TESTER']).exists()
 def list_item(obj,kind):
     """서로 다른 모델을 목록 템플릿용 공통 표현으로 변환한다."""
@@ -25,7 +27,8 @@ def list_item(obj,kind):
 @login_required
 def dashboard(request):
     project=Project.objects.first(); summary=project_summary(project) if project else None
-    return render(request,'dashboard.html',{'project':project,'summary':summary,'projects':Project.objects.all(),'recent':AuditLog.objects.order_by('-created_at')[:8]})
+    unread=Notification.objects.filter(user=request.user,is_read=False).count()
+    return render(request,'dashboard.html',{'project':project,'summary':summary,'projects':Project.objects.all(),'recent':AuditLog.objects.order_by('-created_at')[:8],'unread_notifications':unread})
 @login_required
 def projects(request):
     return render(request,'list.html',{'title':'프로젝트','items':[list_item(x,'projects') for x in Project.objects.all()],'kind':'projects'})
@@ -39,15 +42,32 @@ def project_form(request,pk=None):
 @login_required
 def object_list(request,kind):
     model,form,label=MODEL_MAP[kind]; project=get_object_or_404(Project,pk=request.GET.get('project') or Project.objects.values_list('pk',flat=True).first()); qs=model.objects.filter(project=project)
-    q=request.GET.get('q','');
-    if q: qs=qs.filter(code__icontains=q)
-    return render(request,'list.html',{'title':label,'items':[list_item(x,kind) for x in qs],'kind':kind,'project':project})
+    q=request.GET.get('q','').strip(); status=request.GET.get('status','').strip()
+    if q:
+        query=Q(code__icontains=q)
+        for field in ('title','name','hazard','description','reason','impact'):
+            if field in {f.name for f in model._meta.fields}: query |= Q(**{f'{field}__icontains':q})
+        qs=qs.filter(query)
+    if status and 'status' in {f.name for f in model._meta.fields}: qs=qs.filter(status=status)
+    statuses=model.objects.filter(project=project).exclude(status='').values_list('status',flat=True).distinct() if 'status' in {f.name for f in model._meta.fields} else []
+    return render(request,'list.html',{'title':label,'items':[list_item(x,kind) for x in qs],'kind':kind,'project':project,'statuses':statuses,'q':q,'selected_status':status})
 @login_required
 def object_form(request,kind,pk=None):
     if not can_edit(request.user): return HttpResponse('수정 권한이 없습니다.',status=403)
     model,form_cls,label=MODEL_MAP[kind]; obj=get_object_or_404(model,pk=pk) if pk else None; project=obj.project if obj else get_object_or_404(Project,pk=request.GET.get('project') or Project.objects.values_list('pk',flat=True).first()); form=form_cls(request.POST or None,instance=obj)
     if request.method=='POST' and form.is_valid():
-        x=form.save(commit=False); x.project=project; x.created_by=x.created_by or request.user; x.save(); form.save_m2m(); messages.success(request,f'{label} 항목이 저장되었습니다.'); return redirect('object_list',kind=kind)
+        if obj:
+            old_data={field.name:str(getattr(obj,field.name,'')) for field in obj._meta.fields}
+            VersionSnapshot.objects.create(project=project,model_name=model.__name__,object_id=obj.pk,object_code=getattr(obj,'code',''),version=VersionSnapshot.objects.filter(model_name=model.__name__,object_id=obj.pk).count()+1,data=old_data,change_reason=request.POST.get('change_reason',''),changed_by=request.user)
+        x=form.save(commit=False); x.project=project; x.created_by=x.created_by or request.user
+        if kind=='changes' and x.status in ('승인','반려') and (not obj or obj.status != x.status):
+            x.reviewed_by=request.user; x.reviewed_at=timezone.now()
+        x.save(); form.save_m2m()
+        if kind=='changes':
+            recipients={u for u in (x.requester,x.assignee,project.manager) if u and u != request.user}
+            for user in recipients:
+                Notification.objects.create(user=user,project=project,kind='변경 요청',title=f'{x.code} {x.status}',message=x.title,link=reverse('object_edit',args=['changes',x.pk]))
+        messages.success(request,f'{label} 항목이 저장되었습니다.'); return redirect('object_list',kind=kind)
     return render(request,'form.html',{'form':form,'title':f'{label} 저장','project':project})
 @require_POST
 @login_required
@@ -87,3 +107,36 @@ def export(request,fmt):
 @admin_required
 def audit(request):
     return render(request,'audit.html',{'items':AuditLog.objects.order_by('-created_at')[:200]})
+
+@login_required
+def notifications(request):
+    items=Notification.objects.filter(user=request.user)
+    if request.GET.get('read')=='all':
+        items.filter(is_read=False).update(is_read=True)
+        return redirect('notifications')
+    return render(request,'notifications.html',{'items':items})
+
+@login_required
+def requirement_import(request):
+    if not can_edit(request.user): return HttpResponse('수정 권한이 없습니다.',status=403)
+    form=RequirementImportForm(request.POST or None,request.FILES or None)
+    if request.method=='POST' and form.is_valid():
+        from openpyxl import load_workbook
+        project=form.cleaned_data['project']
+        try:
+            ws=load_workbook(form.cleaned_data['file'],read_only=True,data_only=True).active
+            headers=[str(x or '').strip().lower() for x in next(ws.iter_rows(values_only=True))]
+            required={'title','description'}
+            if not required.issubset(headers): raise ValueError('title, description 열이 필요합니다.')
+            created=0
+            with transaction.atomic():
+                for row in ws.iter_rows(values_only=True):
+                    data=dict(zip(headers,row))
+                    if not data.get('title'): continue
+                    Requirement.objects.create(project=project,code='',title=str(data['title']),description=str(data.get('description') or ''),req_type=str(data.get('req_type') or '기능 요구사항'),priority=str(data.get('priority') or '중'),status=str(data.get('status') or '초안'),created_by=request.user)
+                    created+=1
+            messages.success(request,f'요구사항 {created}건을 가져왔습니다.')
+            return redirect(f"{reverse('object_list',args=['requirements'])}?project={project.pk}")
+        except Exception as exc:
+            form.add_error('file',f'가져오기에 실패했습니다: {exc}')
+    return render(request,'form.html',{'form':form,'title':'요구사항 Excel 가져오기'})

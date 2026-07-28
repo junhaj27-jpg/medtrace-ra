@@ -206,6 +206,62 @@ class CAPA(ProjectCodeModel):
         return f"{self.code} {self.title}"
 
 
+class ChangeRequest(ProjectCodeModel):
+    code_prefix = "CR"
+    STATUS_CHOICES = [
+        ("초안", "초안"),
+        ("검토 중", "검토 중"),
+        ("승인", "승인"),
+        ("반려", "반려"),
+        ("구현 완료", "구현 완료"),
+    ]
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="change_requests")
+    title = models.CharField(max_length=200)
+    reason = models.TextField()
+    impact = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="초안")
+    requester = models.ForeignKey(User, blank=True, null=True, on_delete=models.SET_NULL, related_name="requested_changes")
+    assignee = models.ForeignKey(User, blank=True, null=True, on_delete=models.SET_NULL, related_name="assigned_changes")
+    requirements = models.ManyToManyField(Requirement, blank=True, related_name="change_requests")
+    reviewed_by = models.ForeignKey(User, blank=True, null=True, on_delete=models.SET_NULL, related_name="reviewed_changes")
+    reviewed_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        unique_together = ("project", "code")
+
+    def __str__(self):
+        return f"{self.code} {self.title}"
+
+
+class VersionSnapshot(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="version_snapshots")
+    model_name = models.CharField(max_length=80)
+    object_id = models.PositiveIntegerField()
+    object_code = models.CharField(max_length=30, blank=True)
+    version = models.PositiveIntegerField(default=1)
+    data = models.JSONField(default=dict)
+    change_reason = models.CharField(max_length=250, blank=True)
+    changed_by = models.ForeignKey(User, blank=True, null=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+
+class Notification(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="medtrace_notifications")
+    project = models.ForeignKey(Project, blank=True, null=True, on_delete=models.CASCADE, related_name="notifications")
+    kind = models.CharField(max_length=30, default="알림")
+    title = models.CharField(max_length=200)
+    message = models.TextField(blank=True)
+    link = models.CharField(max_length=300, blank=True)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+
 class AuditLog(models.Model):
     user = models.ForeignKey(User, null=True, on_delete=models.SET_NULL)
     action = models.CharField(max_length=30)

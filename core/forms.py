@@ -1,5 +1,5 @@
 from django import forms
-from .models import Project,Requirement,DesignItem,Risk,TestCase,TestResult,Incident,CAPA
+from .models import Project,Requirement,DesignItem,Risk,TestCase,TestResult,Incident,CAPA,ChangeRequest
 class DateInput(forms.DateInput): input_type='date'
 class ModelForm(forms.ModelForm):
     def __init__(self,*a,**k):
@@ -21,4 +21,13 @@ class IncidentForm(ModelForm):
     class Meta: model=Incident; exclude=('created_by','project'); widgets={'occurred_at':DateInput()}
 class CAPAForm(ModelForm):
     class Meta: model=CAPA; exclude=('created_by','project'); widgets={'target_date':DateInput(),'completed_date':DateInput()}
+class ChangeRequestForm(ModelForm):
+    class Meta:
+        model=ChangeRequest
+        exclude=('created_by','project','reviewed_by','reviewed_at')
+        widgets={'reason':forms.Textarea(attrs={'rows':4}),'impact':forms.Textarea(attrs={'rows':4})}
+
+class RequirementImportForm(forms.Form):
+    project=forms.ModelChoiceField(queryset=Project.objects.all(),label='프로젝트')
+    file=forms.FileField(label='Excel 파일 (.xlsx)')
 
