@@ -8,16 +8,23 @@ from .services import project_summary,trace_rows
 from .permissions import IsSystemAdmin
 class OwnedMixin:
     def perform_create(self,s): s.save(created_by=self.request.user)
-class ProjectViewSet(OwnedMixin,viewsets.ModelViewSet): queryset=Project.objects.all(); serializer_class=ProjectSerializer
-class RequirementViewSet(OwnedMixin,viewsets.ModelViewSet): queryset=Requirement.objects.all(); serializer_class=RequirementSerializer
-class RiskViewSet(OwnedMixin,viewsets.ModelViewSet): queryset=Risk.objects.all(); serializer_class=RiskSerializer
+    def get_queryset(self):
+        qs=super().get_queryset()
+        project=self.request.query_params.get('project')
+        if project and any(field.name=='project' for field in qs.model._meta.fields):
+            qs=qs.filter(project_id=project)
+        return qs
+class ProjectViewSet(OwnedMixin,viewsets.ModelViewSet): queryset=Project.objects.order_by('pk'); serializer_class=ProjectSerializer
+class RequirementViewSet(OwnedMixin,viewsets.ModelViewSet): queryset=Requirement.objects.order_by('pk'); serializer_class=RequirementSerializer
+class RiskViewSet(OwnedMixin,viewsets.ModelViewSet): queryset=Risk.objects.order_by('pk'); serializer_class=RiskSerializer
 class TestViewSet(OwnedMixin,viewsets.ModelViewSet):
-    queryset=TestCase.objects.all(); serializer_class=TestCaseSerializer
+    queryset=TestCase.objects.order_by('pk'); serializer_class=TestCaseSerializer
     @action(detail=True,methods=['post'])
     def result(self,request,pk=None):
         s=TestResultSerializer(data={**request.data,'test_case':self.get_object().pk}); s.is_valid(raise_exception=True); s.save(created_by=request.user); return Response(s.data,status=201)
-class IncidentViewSet(OwnedMixin,viewsets.ModelViewSet): queryset=Incident.objects.all(); serializer_class=IncidentSerializer
-class CAPAViewSet(OwnedMixin,viewsets.ModelViewSet): queryset=CAPA.objects.all(); serializer_class=CAPASerializer
+class IncidentViewSet(OwnedMixin,viewsets.ModelViewSet): queryset=Incident.objects.order_by('pk'); serializer_class=IncidentSerializer
+class CAPAViewSet(OwnedMixin,viewsets.ModelViewSet): queryset=CAPA.objects.order_by('pk'); serializer_class=CAPASerializer
+class ChangeRequestViewSet(OwnedMixin,viewsets.ModelViewSet): queryset=ChangeRequest.objects.order_by('pk'); serializer_class=ChangeRequestSerializer
 @api_view(['POST'])
 def login_api(request):
     u=authenticate(request,username=request.data.get('username'),password=request.data.get('password'))

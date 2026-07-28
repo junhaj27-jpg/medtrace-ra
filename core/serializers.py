@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Project,Requirement,Risk,TestCase,TestResult,Incident,CAPA
+from .models import Project,Requirement,Risk,TestCase,TestResult,Incident,CAPA,ChangeRequest
 class ProjectSerializer(serializers.ModelSerializer):
     class Meta: model=Project; fields='__all__'
 class RequirementSerializer(serializers.ModelSerializer):
@@ -16,4 +16,6 @@ class IncidentSerializer(serializers.ModelSerializer):
 class CAPASerializer(serializers.ModelSerializer):
     overdue=serializers.BooleanField(read_only=True)
     class Meta: model=CAPA; fields='__all__'; read_only_fields=('code','created_by')
+class ChangeRequestSerializer(serializers.ModelSerializer):
+    class Meta: model=ChangeRequest; fields='__all__'; read_only_fields=('code','created_by','reviewed_by','reviewed_at')
 

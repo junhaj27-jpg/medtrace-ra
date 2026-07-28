@@ -2,7 +2,7 @@ from .models import Requirement,Risk,TestCase,CAPA
 def project_summary(project):
     reqs=project.requirements.all(); approved=reqs.filter(status='승인'); linked=approved.filter(tests__isnull=False).distinct().count()
     tests=project.tests.all(); results=[getattr(x,'result',None) for x in tests]
-    return {'requirements':reqs.count(),'approved':approved.count(),'unlinked':approved.filter(tests__isnull=True).count(),'risks':project.risks.count(),'high_risks':sum(r.score>=10 for r in project.risks.all()),'tests':tests.count(),'passed':sum(bool(r) and r.outcome=='PASS' for r in results),'failed':sum(bool(r) and r.outcome=='FAIL' for r in results),'coverage':round(linked/approved.count()*100,1) if approved.count() else 0,'open_capa':project.capas.exclude(status__in=['완료','취소']).count(),'overdue_capa':sum(c.overdue for c in project.capas.all()),'incidents':project.incidents.exclude(investigation_status='종결').count()}
+    return {'requirements':reqs.count(),'approved':approved.count(),'unlinked':approved.filter(tests__isnull=True).count(),'risks':project.risks.count(),'high_risks':sum(r.score>=10 for r in project.risks.all()),'tests':tests.count(),'passed':sum(bool(r) and r.outcome=='PASS' for r in results),'failed':sum(bool(r) and r.outcome=='FAIL' for r in results),'coverage':round(linked/approved.count()*100,1) if approved.count() else 0,'open_capa':project.capas.exclude(status__in=['완료','취소']).count(),'overdue_capa':sum(c.overdue for c in project.capas.all()),'incidents':project.incidents.exclude(investigation_status='종결').count(),'pending_changes':project.change_requests.filter(status__in=['초안','검토 중']).count()}
 def trace_rows(project):
     rows=[]
     for req in project.requirements.prefetch_related('designs','risks','tests__capas'):

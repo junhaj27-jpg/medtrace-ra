@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="heading"><div><h1>알림</h1><p>변경 요청의 배정 및 상태 변경을 확인합니다.</p></div><a class="button" href="?read=all">모두 읽음</a></section>
+<div class="panel table-wrap"><table>
+<thead><tr><th>종류</th><th>내용</th><th>시간</th><th>상태</th></tr></thead>
+<tbody>{% for item in items %}<tr><td>{{ item.kind }}</td><td>{% if item.link %}<a href="{{ item.link }}">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}<br><small>{{ item.message }}</small></td><td>{{ item.created_at|date:"Y-m-d H:i" }}</td><td>{% if item.is_read %}읽음{% else %}<span class="badge">새 알림</span>{% endif %}</td></tr>{% empty %}<tr><td colspan="4">알림이 없습니다.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

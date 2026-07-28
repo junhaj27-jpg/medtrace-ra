@@ -4,7 +4,9 @@ from django.contrib.auth.models import User
 from django.contrib.auth.models import Group
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from io import StringIO
+from io import BytesIO,StringIO
+from django.core.files.uploadedfile import SimpleUploadedFile
+from openpyxl import Workbook
 from .models import *
 from .services import project_summary,trace_rows
 class TestMedTrace(DjangoTestCase):
@@ -57,3 +59,26 @@ class TestMedTrace(DjangoTestCase):
     def test_inactive_admin_cannot_login(self):
         admin=User.objects.create_superuser('inactive',password='StrongPass!1'); admin.is_active=False; admin.save()
         self.assertFalse(self.client.login(username='inactive',password='StrongPass!1'))
+    def test_change_request_and_version_snapshot(self):
+        group,_=Group.objects.get_or_create(name='RA_MANAGER'); self.u.groups.add(group); self.client.force_login(self.u)
+        change=ChangeRequest.objects.create(project=self.p,code='',title='라벨 변경',reason='규격 변경',requester=self.u)
+        self.assertEqual(change.code,'CR-001')
+        response=self.client.post(f'/items/changes/{change.pk}/edit/',{'code':change.code,'title':'라벨 변경 완료','reason':'규격 변경','impact':'문서','status':'승인','requester':self.u.pk})
+        self.assertEqual(response.status_code,302)
+        self.assertEqual(VersionSnapshot.objects.filter(object_id=change.pk,model_name='ChangeRequest').count(),1)
+    def test_search_title_and_project_api_filter(self):
+        Requirement.objects.create(project=self.p,code='',title='배터리 안전',description='과충전 방지')
+        other=Project.objects.create(code='P2',name='Other',device_name='Other')
+        Requirement.objects.create(project=other,code='',title='다른 요구',description='x')
+        self.client.force_login(self.u)
+        self.assertContains(self.client.get(f'/items/requirements/?project={self.p.pk}&q=배터리'),'배터리 안전')
+        data=self.client.get(f'/api/requirements/?project={self.p.pk}').json()
+        self.assertEqual(data['count'],1)
+    def test_requirement_excel_import(self):
+        group,_=Group.objects.get_or_create(name='RA_MANAGER'); self.u.groups.add(group); self.client.force_login(self.u)
+        wb=Workbook(); ws=wb.active; ws.append(['title','description','priority']); ws.append(['멸균 요구','멸균 조건 정의','상'])
+        output=BytesIO(); wb.save(output)
+        upload=SimpleUploadedFile('requirements.xlsx',output.getvalue(),content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response=self.client.post('/requirements/import/',{'project':self.p.pk,'file':upload})
+        self.assertEqual(response.status_code,302)
+        self.assertTrue(Requirement.objects.filter(project=self.p,title='멸균 요구',priority='상').exists())
