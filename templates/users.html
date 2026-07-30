@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="heading"><div><h1>사용자·권한 관리</h1><p>관리자는 계정을 생성하고 업무 역할과 활성 상태를 지정할 수 있습니다.</p></div></section>
+<div class="panel">
+  <h2>{% if target %}{{ target.username }} 수정{% else %}사용자 추가{% endif %}</h2>
+  <form method="post">{% csrf_token %}{{ form.as_p }}<button class="button primary" type="submit">저장</button>{% if target %} <a class="button" href="{% url 'user_management' %}">취소</a>{% endif %}</form>
+</div>
+<div class="panel table-wrap"><table>
+  <thead><tr><th>사용자명</th><th>이메일</th><th>역할</th><th>상태</th><th>최근 로그인</th><th></th></tr></thead>
+  <tbody>{% for item in items %}<tr><td>{{ item.username }}</td><td>{{ item.email|default:"-" }}</td><td><span class="badge">{{ item.role }}</span></td><td>{% if item.active %}활성{% else %}비활성{% endif %}</td><td>{{ item.last_login|date:"Y-m-d H:i"|default:"-" }}</td><td><a href="{% url 'user_edit' item.pk %}">수정</a></td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

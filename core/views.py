@@ -1,6 +1,7 @@
 from io import BytesIO
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import Group,User
 from django.contrib.auth.views import LoginView
 from django.db import transaction
 from django.db.models import Q
@@ -12,10 +13,10 @@ from django.utils import timezone
 from .models import *
 from .forms import *
 from .services import project_summary,trace_rows
-from .permissions import admin_required,has_full_access
+from .permissions import ROLE_LABELS,admin_required,can_modify,has_full_access,user_role
 
 MODEL_MAP={'requirements':(Requirement,RequirementForm,'요구사항'),'designs':(DesignItem,DesignItemForm,'설계'),'risks':(Risk,RiskForm,'위험'),'tests':(TestCase,TestCaseForm,'시험'),'incidents':(Incident,IncidentForm,'이상사례'),'capas':(CAPA,CAPAForm,'CAPA'),'changes':(ChangeRequest,ChangeRequestForm,'변경 요청')}
-def can_edit(user): return has_full_access(user) or user.groups.filter(name__in=['RA_MANAGER','DEVELOPER','TESTER']).exists()
+def can_edit(user): return can_modify(user)
 def list_item(obj,kind):
     """서로 다른 모델을 목록 템플릿용 공통 표현으로 변환한다."""
     title=getattr(obj,'name',None) or getattr(obj,'title',None) or getattr(obj,'hazard',None) or getattr(obj,'test_name',None) or getattr(obj,'incident_summary',None) or '-'
@@ -140,3 +141,25 @@ def requirement_import(request):
         except Exception as exc:
             form.add_error('file',f'가져오기에 실패했습니다: {exc}')
     return render(request,'form.html',{'form':form,'title':'요구사항 Excel 가져오기'})
+
+@admin_required
+def user_management(request,pk=None):
+    target=get_object_or_404(User,pk=pk) if pk else None
+    initial=None
+    if target:
+        initial={'username':target.username,'email':target.email,'role':user_role(target),'is_active':target.is_active}
+    form=ManagedUserForm(request.POST or None,user_instance=target,initial=initial)
+    if request.method=='POST' and form.is_valid():
+        if target==request.user and (form.cleaned_data['role']!='ADMIN' or not form.cleaned_data['is_active']):
+            form.add_error('role','현재 로그인한 관리자 계정은 관리자 권한을 해제하거나 비활성화할 수 없습니다.')
+        else:
+            user=target or User()
+            user.username=form.cleaned_data['username']; user.email=form.cleaned_data['email']; user.is_active=form.cleaned_data['is_active']
+            role=form.cleaned_data['role']; user.is_staff=role=='ADMIN'; user.is_superuser=role=='ADMIN'
+            if form.cleaned_data['password']: user.set_password(form.cleaned_data['password'])
+            user.save()
+            user.groups.clear(); group,_=Group.objects.get_or_create(name=role); user.groups.add(group)
+            messages.success(request,f'{user.username} 계정을 {ROLE_LABELS[role]} 역할로 저장했습니다.')
+            return redirect('user_management')
+    users=[{'pk':u.pk,'username':u.username,'email':u.email,'role':ROLE_LABELS.get(user_role(u),user_role(u)),'active':u.is_active,'last_login':u.last_login} for u in User.objects.order_by('username')]
+    return render(request,'users.html',{'items':users,'form':form,'target':target})

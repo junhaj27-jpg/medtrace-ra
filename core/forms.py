@@ -1,5 +1,7 @@
 from django import forms
+from django.contrib.auth.models import User
 from .models import Project,Requirement,DesignItem,Risk,TestCase,TestResult,Incident,CAPA,ChangeRequest
+from .permissions import ROLE_LABELS
 class DateInput(forms.DateInput): input_type='date'
 class ModelForm(forms.ModelForm):
     def __init__(self,*a,**k):
@@ -30,4 +32,26 @@ class ChangeRequestForm(ModelForm):
 class RequirementImportForm(forms.Form):
     project=forms.ModelChoiceField(queryset=Project.objects.all(),label='프로젝트')
     file=forms.FileField(label='Excel 파일 (.xlsx)')
+
+class ManagedUserForm(forms.Form):
+    username=forms.CharField(label='사용자명',max_length=150)
+    email=forms.EmailField(label='이메일',required=False)
+    role=forms.ChoiceField(label='역할',choices=list(ROLE_LABELS.items()))
+    password=forms.CharField(label='비밀번호',required=False,widget=forms.PasswordInput,help_text='신규 사용자는 8자 이상, 기존 사용자는 변경할 때만 입력')
+    is_active=forms.BooleanField(label='활성 계정',required=False,initial=True)
+    def __init__(self,*args,user_instance=None,**kwargs):
+        self.user_instance=user_instance
+        super().__init__(*args,**kwargs)
+        for field in self.fields.values(): field.widget.attrs['class']='field'
+    def clean_username(self):
+        username=self.cleaned_data['username']
+        qs=User.objects.filter(username=username)
+        if self.user_instance: qs=qs.exclude(pk=self.user_instance.pk)
+        if qs.exists(): raise forms.ValidationError('이미 사용 중인 사용자명입니다.')
+        return username
+    def clean_password(self):
+        password=self.cleaned_data.get('password','')
+        if not self.user_instance and len(password)<8: raise forms.ValidationError('신규 사용자의 비밀번호는 8자 이상이어야 합니다.')
+        if password and len(password)<8: raise forms.ValidationError('비밀번호는 8자 이상이어야 합니다.')
+        return password
 
