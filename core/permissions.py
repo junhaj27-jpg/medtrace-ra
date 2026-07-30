@@ -3,8 +3,25 @@ from django.core.exceptions import PermissionDenied
 from django.contrib.auth.views import redirect_to_login
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 
+ROLE_LABELS={
+    'ADMIN':'관리자',
+    'RA_MANAGER':'RA 관리자',
+    'DEVELOPER':'개발자',
+    'TESTER':'시험 담당자',
+    'VIEWER':'일반 사용자',
+}
+
 def has_full_access(user):
     return bool(user and user.is_authenticated and (user.is_superuser or user.groups.filter(name='ADMIN').exists()))
+
+def user_role(user):
+    if not user or not user.is_authenticated:return ''
+    if has_full_access(user):return 'ADMIN'
+    role=user.groups.filter(name__in=ROLE_LABELS).values_list('name',flat=True).first()
+    return role or 'VIEWER'
+
+def can_modify(user):
+    return bool(user and user.is_authenticated and (has_full_access(user) or user.groups.filter(name__in=['RA_MANAGER','DEVELOPER','TESTER']).exists()))
 
 def admin_required(view_func):
     @wraps(view_func)
