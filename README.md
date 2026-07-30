@@ -21,6 +21,11 @@
 - 프로젝트 대시보드와 추적성 매트릭스
 - DOCX, XLSX, PDF 추적성 보고서 출력
 - 역할 기반 화면 및 REST API 접근 제어
+- 관리자 전용 사용자·권한 관리 화면(`/users/`)
+- 변경 요청 승인·반려, 담당자 알림 및 수정 전 버전 스냅샷
+- 코드·제목·내용 통합 검색과 상태 필터
+- 요구사항 Excel 가져오기(`/requirements/import/`)
+- 프로젝트별 API 필터와 페이지네이션
 - 관리자용 변경 요청 감사 로그
 - 재현 가능한 데모 데이터 생성 명령
 
@@ -81,13 +86,15 @@ python manage.py runserver
 
 | 그룹 | 권한 |
 |---|---|
-| `ADMIN` | 전체 편집, 사용자 조회 API, 감사 로그 접근 |
+| `ADMIN` | 전체 편집, 사용자·권한 관리, 사용자 조회 API, 감사 로그 접근 |
 | `RA_MANAGER` | 업무 데이터 조회 및 편집 |
 | `DEVELOPER` | 업무 데이터 조회 및 편집 |
 | `TESTER` | 업무 데이터 조회 및 편집 |
 | `VIEWER` | 조회 전용 |
 
-REST API는 인증된 사용자만 사용할 수 있습니다. 조회 요청은 모든 인증 사용자에게 허용되며, 변경 요청은 관리자 또는 편집 그룹에만 허용됩니다.
+REST API는 인증된 사용자만 사용할 수 있습니다. 조회 요청은 모든 인증 사용자에게 허용되며, 변경 요청은 관리자 또는 편집 그룹에만 허용됩니다. 일반 사용자는 화면에서도 생성·수정·삭제 버튼이 숨겨지고 `조회 전용`으로 표시됩니다.
+
+관리자는 `/users/`에서 사용자를 생성하고 역할과 계정 활성 상태를 변경할 수 있습니다. 현재 로그인한 관리자가 실수로 자신의 관리자 권한을 제거하거나 계정을 비활성화하는 작업은 차단됩니다.
 
 ## 주요 화면
 
@@ -95,14 +102,18 @@ REST API는 인증된 사용자만 사용할 수 있습니다. 조회 요청은 
 |---|---|
 | 대시보드 | `/` |
 | 프로젝트 | `/projects/` |
-| 요구사항 | `/requirements/` |
+| 요구사항 | `/requirements/` 또는 `/items/requirements/` |
+| 요구사항 Excel 가져오기 | `/requirements/import/` |
 | 설계 | `/items/designs/` |
 | 위험 | `/risks/` |
 | 시험 | `/tests/` |
 | 이상사례 | `/incidents/` |
 | CAPA | `/capa/` |
 | 추적성 매트릭스 | `/traceability/` |
+| 변경 요청 | `/items/changes/` |
+| 알림 | `/notifications/` |
 | 감사 로그 | `/audit/` |
+| 사용자·권한 관리 | `/users/` |
 | Django 관리자 | `/admin/` |
 
 보고서는 `/export/xlsx/`, `/export/docx/`, `/export/pdf/`에서 내려받을 수 있습니다. `project` 쿼리 파라미터를 생략하면 첫 번째 프로젝트를 사용합니다.
@@ -121,6 +132,7 @@ API 기본 경로는 `/api/`입니다.
 | 시험 결과 등록 | `/api/tests/{id}/result/` |
 | 이상사례 | `/api/incidents/` |
 | CAPA | `/api/capa/` |
+| 변경 요청 | `/api/changes/` |
 | 추적성 | `/api/traceability/` |
 | 추적성 누락 | `/api/traceability/gaps/` |
 | 대시보드 요약 | `/api/dashboard/summary/` |
@@ -144,6 +156,9 @@ erDiagram
   PROJECT ||--o{ TEST_CASE : contains
   PROJECT ||--o{ INCIDENT : contains
   PROJECT ||--o{ CAPA : contains
+  PROJECT ||--o{ CHANGE_REQUEST : contains
+  PROJECT ||--o{ VERSION_SNAPSHOT : records
+  PROJECT ||--o{ NOTIFICATION : emits
   REQUIREMENT }o--o{ DESIGN_ITEM : realized_by
   REQUIREMENT }o--o{ RISK : analyzed_by
   REQUIREMENT }o--o{ TEST_CASE : verified_by
@@ -153,6 +168,10 @@ erDiagram
   TEST_CASE ||--o{ CAPA : triggers
   INCIDENT ||--o{ CAPA : triggers
   RISK ||--o{ CAPA : mitigated_by
+  REQUIREMENT }o--o{ CHANGE_REQUEST : affected_by
+  USER ||--o{ CHANGE_REQUEST : requests
+  USER ||--o{ VERSION_SNAPSHOT : changes
+  USER ||--o{ NOTIFICATION : receives
   USER ||--o{ AUDIT_LOG : performs
 ```
 
@@ -197,7 +216,7 @@ python manage.py makemigrations --check --dry-run
 python manage.py test
 ```
 
-현재 테스트는 로그인, 자동 식별자, 위험 계산, 추적성 누락, CAPA 기한, 보고서 출력, API 인증, 목록 화면, 관리자 명령 및 역할 권한을 검증합니다.
+현재 테스트는 로그인, 자동 식별자, 위험 계산, 추적성 누락, CAPA 기한, 보고서 출력, API 인증, 검색, Excel 가져오기, 변경 요청과 버전 이력, 목록 화면, 관리자 명령 및 역할 권한을 검증합니다. 현재 테스트 수는 17개입니다.
 
 ## 프로젝트 구조
 
