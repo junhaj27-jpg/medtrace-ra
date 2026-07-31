@@ -117,3 +117,10 @@ class TestMedTrace(DjangoTestCase):
         self.assertEqual(len(change.approval_signature.content_hash),64)
         self.assertEqual(self.client.get(f'/items/changes/{change.pk}/edit/').status_code,409)
         self.assertEqual(self.client.post(f'/items/changes/{change.pk}/delete/').status_code,409)
+    def test_audit_log_records_safe_request_details(self):
+        self.client.force_login(self.u)
+        self.client.post('/login/', {'username':'tester','password':'pw','note':'확인'})
+        log=AuditLog.objects.latest('created_at')
+        self.assertEqual(log.response_status,302)
+        self.assertEqual(log.details['password'],'[REDACTED]')
+        self.assertEqual(log.details['note'],'확인')
