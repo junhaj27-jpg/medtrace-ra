@@ -233,6 +233,20 @@ class ChangeRequest(ProjectCodeModel):
         return f"{self.code} {self.title}"
 
 
+class ApprovalSignature(models.Model):
+    change_request = models.OneToOneField(ChangeRequest, on_delete=models.PROTECT, related_name="approval_signature")
+    signer = models.ForeignKey(User, on_delete=models.PROTECT, related_name="approval_signatures")
+    signed_at = models.DateTimeField(auto_now_add=True)
+    comment = models.TextField(blank=True)
+    content_hash = models.CharField(max_length=64)
+
+    class Meta:
+        ordering = ("-signed_at",)
+
+    def __str__(self):
+        return f"{self.change_request.code} / {self.signer.username}"
+
+
 class VersionSnapshot(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="version_snapshots")
     model_name = models.CharField(max_length=80)

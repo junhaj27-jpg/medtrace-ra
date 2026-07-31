@@ -17,9 +17,10 @@
     <td>{{ x.title|default:"-" }}</td>
     <td><span class="badge">{{ x.status|default:"-" }}</span></td>
     <td>{{ x.updated_at|date:"Y-m-d"|default:"-" }}</td>
-    <td>{% if can_modify %}<a href="{{ x.edit_url }}">수정</a>
+    <td>{% if can_modify %}{% if not x.locked %}<a href="{{ x.edit_url }}">수정</a>{% else %}<span class="badge">전자서명 잠금</span>{% endif %}
+      {% if x.approve_url %} · <a href="{{ x.approve_url }}">전자서명 승인</a>{% endif %}
       {% if x.has_result %} · <a href="{% url 'result_form' x.pk %}">결과</a>{% endif %}
-      {% if x.delete_url %}<form class="inline" method="post" action="{{ x.delete_url }}" onsubmit="return confirm('삭제하시겠습니까?')">{% csrf_token %}<button class="link" type="submit">삭제</button></form>{% endif %}
+      {% if x.delete_url and not x.locked %}<form class="inline" method="post" action="{{ x.delete_url }}" onsubmit="return confirm('삭제하시겠습니까?')">{% csrf_token %}<button class="link" type="submit">삭제</button></form>{% endif %}
       {% else %}<span>조회 전용</span>{% endif %}
     </td>
   </tr>{% empty %}<tr><td colspan="5">등록된 항목이 없습니다.</td></tr>{% endfor %}</tbody>

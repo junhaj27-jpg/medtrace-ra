@@ -1,4 +1,6 @@
 from io import BytesIO
+import hashlib
+import json
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import Group,User
@@ -24,7 +26,8 @@ def list_item(obj,kind):
     code=getattr(obj,'code',None) or getattr(obj,'project_id',None) or f'ID-{obj.pk}'
     edit_url=reverse('project_edit',args=[obj.pk]) if kind=='projects' else reverse('object_edit',args=[kind,obj.pk])
     delete_url=None if kind=='projects' else reverse('object_delete',args=[kind,obj.pk])
-    return {'pk':obj.pk,'code':code,'title':title,'status':status,'updated_at':getattr(obj,'updated_at',None),'edit_url':edit_url,'delete_url':delete_url,'has_result':kind=='tests'}
+    locked=kind=='changes' and hasattr(obj,'approval_signature')
+    return {'pk':obj.pk,'code':code,'title':title,'status':status,'updated_at':getattr(obj,'updated_at',None),'edit_url':edit_url,'delete_url':delete_url,'has_result':kind=='tests','locked':locked,'approve_url':reverse('change_approve',args=[obj.pk]) if kind=='changes' and not locked else None}
 @login_required
 def dashboard(request):
     project=Project.objects.first(); summary=project_summary(project) if project else None
@@ -55,7 +58,9 @@ def object_list(request,kind):
 @login_required
 def object_form(request,kind,pk=None):
     if not can_edit(request.user): return HttpResponse('수정 권한이 없습니다.',status=403)
-    model,form_cls,label=MODEL_MAP[kind]; obj=get_object_or_404(model,pk=pk) if pk else None; project=obj.project if obj else get_object_or_404(Project,pk=request.GET.get('project') or Project.objects.values_list('pk',flat=True).first()); form=form_cls(request.POST or None,instance=obj)
+    model,form_cls,label=MODEL_MAP[kind]; obj=get_object_or_404(model,pk=pk) if pk else None
+    if kind=='changes' and obj and hasattr(obj,'approval_signature'): return HttpResponse('전자서명으로 승인된 변경 요청은 수정할 수 없습니다.',status=409)
+    project=obj.project if obj else get_object_or_404(Project,pk=request.GET.get('project') or Project.objects.values_list('pk',flat=True).first()); form=form_cls(request.POST or None,instance=obj)
     if request.method=='POST' and form.is_valid():
         if obj:
             old_data={field.name:str(getattr(obj,field.name,'')) for field in obj._meta.fields}
@@ -74,6 +79,9 @@ def object_form(request,kind,pk=None):
 @login_required
 def object_delete(request,kind,pk):
     if not can_edit(request.user): return HttpResponse(status=403)
+    if kind=='changes':
+        obj=get_object_or_404(ChangeRequest,pk=pk)
+        if hasattr(obj,'approval_signature'): return HttpResponse('전자서명으로 승인된 변경 요청은 삭제할 수 없습니다.',status=409)
     MODEL_MAP[kind][0].objects.filter(pk=pk).delete(); messages.success(request,'삭제되었습니다.'); return redirect('object_list',kind=kind)
 @login_required
 def result_form(request,pk):
@@ -163,3 +171,24 @@ def user_management(request,pk=None):
             return redirect('user_management')
     users=[{'pk':u.pk,'username':u.username,'email':u.email,'role':ROLE_LABELS.get(user_role(u),user_role(u)),'active':u.is_active,'last_login':u.last_login} for u in User.objects.order_by('username')]
     return render(request,'users.html',{'items':users,'form':form,'target':target})
+
+@login_required
+def change_approve(request,pk):
+    if not can_edit(request.user): return HttpResponse('승인 권한이 없습니다.',status=403)
+    change=get_object_or_404(ChangeRequest,pk=pk)
+    if hasattr(change,'approval_signature'): return HttpResponse('이미 승인된 변경 요청입니다.',status=409)
+    form=ApprovalSignatureForm(request.POST or None)
+    if request.method=='POST' and form.is_valid():
+        if not request.user.check_password(form.cleaned_data['password']):
+            form.add_error('password','비밀번호가 일치하지 않습니다.')
+        else:
+            payload={field.name:str(getattr(change,field.name,'')) for field in change._meta.fields}
+            payload['requirements']=list(change.requirements.order_by('pk').values_list('pk',flat=True))
+            digest=hashlib.sha256(json.dumps(payload,sort_keys=True,ensure_ascii=False).encode('utf-8')).hexdigest()
+            with transaction.atomic():
+                VersionSnapshot.objects.create(project=change.project,model_name='ChangeRequest',object_id=change.pk,object_code=change.code,version=VersionSnapshot.objects.filter(model_name='ChangeRequest',object_id=change.pk).count()+1,data=payload,change_reason='전자서명 승인',changed_by=request.user)
+                ApprovalSignature.objects.create(change_request=change,signer=request.user,comment=form.cleaned_data['comment'],content_hash=digest)
+                change.status='승인'; change.reviewed_by=request.user; change.reviewed_at=timezone.now(); change.save(update_fields=['status','reviewed_by','reviewed_at','updated_at'])
+            messages.success(request,f'{change.code} 변경 요청을 전자서명으로 승인했습니다.')
+            return redirect('object_list',kind='changes')
+    return render(request,'approval.html',{'form':form,'change':change,'title':f'{change.code} 전자서명 승인'})
