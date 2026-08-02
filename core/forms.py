@@ -28,6 +28,27 @@ class ChangeRequestForm(ModelForm):
         model=ChangeRequest
         exclude=('created_by','project','reviewed_by','reviewed_at')
         widgets={'reason':forms.Textarea(attrs={'rows':4}),'impact':forms.Textarea(attrs={'rows':4})}
+    def clean_status(self):
+        status=self.cleaned_data['status']
+        if status=='승인' and not (self.instance.pk and hasattr(self.instance,'approval_signature')):
+            raise forms.ValidationError('승인은 목록의 전자서명 기능을 사용해야 합니다.')
+        return status
+
+class ApprovalSignatureForm(forms.Form):
+    password=forms.CharField(label='현재 비밀번호',widget=forms.PasswordInput)
+    comment=forms.CharField(label='승인 의견',required=False,widget=forms.Textarea(attrs={'rows':4}))
+    confirm=forms.BooleanField(label='현재 내용과 버전을 검토했으며 승인합니다.')
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        for field in self.fields.values(): field.widget.attrs['class']='field'
+
+class ApprovalRevokeForm(forms.Form):
+    password=forms.CharField(label='현재 비밀번호',widget=forms.PasswordInput)
+    reason=forms.CharField(label='승인 취소 사유',widget=forms.Textarea(attrs={'rows':4}))
+    confirm=forms.BooleanField(label='기존 승인 이력을 보존하고 재승인이 필요함을 확인합니다.')
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        for field in self.fields.values(): field.widget.attrs['class']='field'
 
 class RequirementImportForm(forms.Form):
     project=forms.ModelChoiceField(queryset=Project.objects.all(),label='프로젝트')
