@@ -247,6 +247,19 @@ class ApprovalSignature(models.Model):
         return f"{self.change_request.code} / {self.signer.username}"
 
 
+class ApprovalEvent(models.Model):
+    EVENT_CHOICES = (("approved", "승인"), ("revoked", "승인 취소"))
+    change_request = models.ForeignKey(ChangeRequest, on_delete=models.PROTECT, related_name="approval_events")
+    event = models.CharField(max_length=20, choices=EVENT_CHOICES)
+    actor = models.ForeignKey(User, on_delete=models.PROTECT, related_name="approval_events")
+    comment = models.TextField(blank=True)
+    content_hash = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+
 class VersionSnapshot(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="version_snapshots")
     model_name = models.CharField(max_length=80)

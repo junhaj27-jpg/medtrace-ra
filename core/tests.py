@@ -124,3 +124,17 @@ class TestMedTrace(DjangoTestCase):
         self.assertEqual(log.response_status,302)
         self.assertEqual(log.details['password'],'[REDACTED]')
         self.assertEqual(log.details['note'],'확인')
+    def test_change_audit_diff_and_approval_revoke_history(self):
+        group,_=Group.objects.get_or_create(name='RA_MANAGER'); self.u.groups.add(group); self.client.force_login(self.u)
+        change=ChangeRequest.objects.create(project=self.p,code='',title='변경 전',reason='사유',status='검토 중',requester=self.u)
+        response=self.client.post(f'/items/changes/{change.pk}/edit/',{'code':change.code,'title':'변경 후','reason':'사유','impact':'','status':'검토 중','requester':self.u.pk,'assignee':''})
+        self.assertEqual(response.status_code,302)
+        detail=AuditLog.objects.filter(action='수정').latest('created_at').details
+        self.assertEqual(detail['changes']['title'],{'before':'변경 전','after':'변경 후'})
+        self.client.post(f'/items/changes/{change.pk}/approve/',{'password':'pw','comment':'승인','confirm':'on'})
+        revoked=self.client.post(f'/items/changes/{change.pk}/revoke/',{'password':'pw','reason':'내용 보완','confirm':'on'})
+        self.assertEqual(revoked.status_code,302)
+        change.refresh_from_db()
+        self.assertEqual(change.status,'검토 중')
+        self.assertFalse(hasattr(change,'approval_signature'))
+        self.assertEqual(list(change.approval_events.values_list('event',flat=True)),['revoked','approved'])

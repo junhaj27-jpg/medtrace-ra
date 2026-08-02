@@ -42,6 +42,14 @@ class ApprovalSignatureForm(forms.Form):
         super().__init__(*args,**kwargs)
         for field in self.fields.values(): field.widget.attrs['class']='field'
 
+class ApprovalRevokeForm(forms.Form):
+    password=forms.CharField(label='현재 비밀번호',widget=forms.PasswordInput)
+    reason=forms.CharField(label='승인 취소 사유',widget=forms.Textarea(attrs={'rows':4}))
+    confirm=forms.BooleanField(label='기존 승인 이력을 보존하고 재승인이 필요함을 확인합니다.')
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        for field in self.fields.values(): field.widget.attrs['class']='field'
+
 class RequirementImportForm(forms.Form):
     project=forms.ModelChoiceField(queryset=Project.objects.all(),label='프로젝트')
     file=forms.FileField(label='Excel 파일 (.xlsx)')
