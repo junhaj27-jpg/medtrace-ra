@@ -1,0 +1,5 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="heading"><div><h1>{{ change.code }} 승인 이력</h1><p>{{ change.title }} · 현재 상태 {{ change.status }}</p></div><a class="button" href="{% url 'object_list' 'changes' %}?project={{ change.project_id }}">목록으로</a></section>
+<div class="panel table-wrap"><table><thead><tr><th>구분</th><th>담당자</th><th>의견·사유</th><th>콘텐츠 해시</th><th>시각</th></tr></thead><tbody>{% for event in events %}<tr><td><span class="badge{% if event.event == 'revoked' %} bad{% endif %}">{{ event.get_event_display }}</span></td><td>{{ event.actor.username }}</td><td>{{ event.comment|default:"-" }}</td><td><code title="{{ event.content_hash }}">{{ event.content_hash|truncatechars:18 }}</code></td><td>{{ event.created_at }}</td></tr>{% empty %}<tr><td colspan="5">승인 이력이 없습니다.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}
