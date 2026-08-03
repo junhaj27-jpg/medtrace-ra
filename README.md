@@ -213,6 +213,7 @@ python manage.py promote_admin --username username
 ```powershell
 python manage.py check
 python manage.py makemigrations --check --dry-run
+python manage.py migrate --noinput
 python manage.py test
 ```
 
@@ -441,3 +442,16 @@ static/                  CSS 등 정적 파일
 - PATCH: 호환되는 버그 수정
 - MINOR: 하위 호환 기능 추가
 - MAJOR: 호환되지 않는 구조 또는 API 변경
+
+
+## CI 검증
+
+현재 테스트는 로그인, 자동 식별자, 위험 계산, 추적성 누락, CAPA 기한, 보고서 출력, API 인증, 목록 화면, 관리자 명령 및 역할 권한을 검증합니다.
+
+GitHub Actions와 로컬 개발 환경은 [`.python-version`](.python-version)의 Python 3.12를 기준으로 합니다. CI는 외부 API 키 없이 실행되며 `DEBUG=False`, 테스트용 `SECRET_KEY`, `AI_FEATURE_ENABLED=False`를 명시합니다.
+
+### CI 문제 해결 기록
+
+- `Tests / test` 실패 원인은 감사 로그 데이터에 `model` 키가 없을 때 템플릿의 `default` 필터 인수를 해석하면서 발생한 `VariableDoesNotExist`였습니다.
+- 감사 로그 제목을 명시적인 `{% if %}` 분기로 처리하여 `code`와 `model` 키가 모두 없어도 안전하게 렌더링하도록 수정했습니다.
+- CI에서 시스템 체크, 마이그레이션 누락 검사, 실제 마이그레이션 적용 후 테스트를 실행하도록 검증 단계를 강화했습니다.
