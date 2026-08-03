@@ -1,4 +1,5 @@
 from io import BytesIO
+import csv
 import hashlib
 import json
 from django.contrib import messages
@@ -19,6 +20,9 @@ from .permissions import ROLE_LABELS,admin_required,can_modify,has_full_access,u
 
 MODEL_MAP={'requirements':(Requirement,RequirementForm,'요구사항'),'designs':(DesignItem,DesignItemForm,'설계'),'risks':(Risk,RiskForm,'위험'),'tests':(TestCase,TestCaseForm,'시험'),'incidents':(Incident,IncidentForm,'이상사례'),'capas':(CAPA,CAPAForm,'CAPA'),'changes':(ChangeRequest,ChangeRequestForm,'변경 요청')}
 def can_edit(user): return can_modify(user)
+def csv_safe(value):
+    text='' if value is None else str(value)
+    return f"'{text}" if text.startswith(('=','+','-','@')) else text
 def list_item(obj,kind):
     """서로 다른 모델을 목록 템플릿용 공통 표현으로 변환한다."""
     title=getattr(obj,'name',None) or getattr(obj,'title',None) or getattr(obj,'hazard',None) or getattr(obj,'test_name',None) or getattr(obj,'incident_summary',None) or '-'
@@ -27,7 +31,7 @@ def list_item(obj,kind):
     edit_url=reverse('project_edit',args=[obj.pk]) if kind=='projects' else reverse('object_edit',args=[kind,obj.pk])
     delete_url=None if kind=='projects' else reverse('object_delete',args=[kind,obj.pk])
     locked=kind=='changes' and hasattr(obj,'approval_signature')
-    return {'pk':obj.pk,'code':code,'title':title,'status':status,'updated_at':getattr(obj,'updated_at',None),'edit_url':edit_url,'delete_url':delete_url,'has_result':kind=='tests','locked':locked,'approve_url':reverse('change_approve',args=[obj.pk]) if kind=='changes' and not locked else None,'revoke_url':reverse('change_revoke',args=[obj.pk]) if kind=='changes' and locked else None}
+    return {'pk':obj.pk,'code':code,'title':title,'status':status,'updated_at':getattr(obj,'updated_at',None),'edit_url':edit_url,'delete_url':delete_url,'has_result':kind=='tests','locked':locked,'approve_url':reverse('change_approve',args=[obj.pk]) if kind=='changes' and not locked else None,'revoke_url':reverse('change_revoke',args=[obj.pk]) if kind=='changes' and locked else None,'history_url':reverse('change_history',args=[obj.pk]) if kind=='changes' else None}
 @login_required
 def dashboard(request):
     project=Project.objects.first(); summary=project_summary(project) if project else None
@@ -119,7 +123,21 @@ def export(request,fmt):
     response=HttpResponse(data,content_type=content); response['Content-Disposition']=f'attachment; filename="traceability.{fmt}"'; return response
 @admin_required
 def audit(request):
-    return render(request,'audit.html',{'items':AuditLog.objects.order_by('-created_at')[:200]})
+    items=AuditLog.objects.select_related('user').order_by('-created_at')
+    user=request.GET.get('user','').strip(); action=request.GET.get('action','').strip()
+    date_from=request.GET.get('date_from','').strip(); date_to=request.GET.get('date_to','').strip()
+    if user: items=items.filter(user__username__icontains=user)
+    if action: items=items.filter(Q(action__icontains=action)|Q(method__icontains=action)|Q(path__icontains=action))
+    if date_from: items=items.filter(created_at__date__gte=date_from)
+    if date_to: items=items.filter(created_at__date__lte=date_to)
+    if request.GET.get('export')=='csv':
+        response=HttpResponse(content_type='text/csv; charset=utf-8'); response.write('\ufeff')
+        response['Content-Disposition']='attachment; filename="audit-log.csv"'
+        writer=csv.writer(response); writer.writerow(['시각','사용자','행위','메서드','경로','응답 상태','상세'])
+        for item in items:
+            writer.writerow([csv_safe(timezone.localtime(item.created_at).strftime('%Y-%m-%d %H:%M:%S')),csv_safe(item.user.username if item.user else '탈퇴 사용자'),csv_safe(item.action),csv_safe(item.method),csv_safe(item.path),item.response_status or '',csv_safe(json.dumps(item.details,ensure_ascii=False))])
+        return response
+    return render(request,'audit.html',{'items':items[:200],'filters':{'user':user,'action':action,'date_from':date_from,'date_to':date_to}})
 
 @login_required
 def notifications(request):
@@ -217,3 +235,9 @@ def change_revoke(request,pk):
             messages.success(request,f'{change.code} 승인을 취소했습니다. 변경 후 재승인이 필요합니다.')
             return redirect('object_list',kind='changes')
     return render(request,'approval.html',{'form':form,'change':change,'title':f'{change.code} 승인 취소'})
+
+@login_required
+def change_history(request,pk):
+    change=get_object_or_404(ChangeRequest.objects.select_related('project','requester','assignee'),pk=pk)
+    events=change.approval_events.select_related('actor').all()
+    return render(request,'approval_history.html',{'change':change,'events':events})
